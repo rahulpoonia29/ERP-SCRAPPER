@@ -1,0 +1,25 @@
+{
+    "name": "ERP-SCRAPPER",
+    "type": "module",
+    "scripts": {
+        "dev": "tsx watch --env-file=.env src/index.ts",
+        "build": "tsc",
+        "start": "node --env-file=.env dist/src/index.js",
+        "test": "tsx fuck_it/index.ts"
+    },
+    "dependencies": {
+        "@hono/node-server": "^1.16.0",
+        "@hono/zod-validator": "^0.7.1",
+        "axios": "^1.10.0",
+        "hono": "^4.8.5",
+        "playwright": "^1.54.1",
+        "uploadthing": "^7.7.3",
+        "winston": "^3.17.0",
+        "zod": "^4.0.5"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.17",
+        "tsx": "^4.7.1",
+        "typescript": "^5.8.3"
+    }
+}
