@@ -34,7 +34,7 @@ export async function scrapeNotices(params: NoticeScrapeParams): Promise<void> {
         // --- Step 1: Initialize and Login ---
         session = new ErpSession(rollNo, password, securityAnswers, ENV);
         await session.init();
-        // await session.login();
+        await session.login();
 
         runLogger.info("Session established successfully.");
 
