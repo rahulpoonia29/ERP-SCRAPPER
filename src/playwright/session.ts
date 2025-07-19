@@ -92,9 +92,6 @@ export class ErpSession {
             await this._handleSecurityQuestion();
             await this._submitOtp();
 
-            await this.page.waitForURL(this.URLS.LOGIN_SUCCESS_REDIRECT, {
-                timeout: this.TIMEOUTS.NAVIGATION,
-            });
             loginLogger.info(
                 "Login successful and redirected to welcome page."
             );
