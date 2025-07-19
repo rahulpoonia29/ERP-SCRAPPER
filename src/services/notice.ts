@@ -2,10 +2,9 @@ import z from "zod";
 import { NoticeScraper } from "../playwright/notice.js";
 import { ErpSession } from "../playwright/session.js";
 import { AuthCredentialsSchema } from "../schema/session.js";
-import { logger } from "../utils/logger.js";
 import type { Env } from "../types/env.js";
 import type { Notice } from "../types/notice.js";
-import fs from "fs";
+import { logger } from "../utils/logger.js";
 
 export const NoticeScrapeParamsSchema = AuthCredentialsSchema.extend({
     lastKnownNoticeAt: z.string().refine((val) => !isNaN(Date.parse(val)), {
@@ -62,10 +61,10 @@ export async function scrapeNotices(params: NoticeScrapeParams): Promise<void> {
             session = null;
         }
 
-        await fs.writeFileSync(
-            "notices.json",
-            JSON.stringify(newNotices, null, 2)
-        );
+        // await fs.writeFileSync(
+        //     "notices.json",
+        //     JSON.stringify(newNotices, null, 2)
+        // );
         await postNoticesToWebhook(ENV.NOTICE_WEBHOOK_URL, newNotices);
 
         runLogger.info("Successfully posted notices to webhook. Job finished.");
