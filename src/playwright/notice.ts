@@ -38,8 +38,6 @@ export class NoticeScraper {
                 waitUntil: "domcontentloaded",
             });
 
-            await this.page.waitForTimeout(40000);
-
             logger.info("Waiting for the notices grid to be visible.");
             await this.page.waitForSelector(this.SELECTORS.GRID, {
                 state: "visible",

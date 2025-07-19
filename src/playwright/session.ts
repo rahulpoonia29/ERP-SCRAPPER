@@ -48,25 +48,25 @@ export class ErpSession {
         try {
             logger.info("Initializing browser session...");
 
-            if (this.ENV.PLAYWRIGHT_LAUNCH_STANDALONE === "true") {
-                this.browser = await chromium.launch({
-                    headless: this.ENV.PLAYWRIGHT_LAUNCH_HEADLESS === "true",
-                    slowMo: 500,
-                });
-                this.context = await this.browser.newContext({
-                    viewport: { width: 1280, height: 720 },
-                    userAgent:
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                });
-            } else {
-                this.browser = await chromium.connectOverCDP(
-                    "http://localhost:9222",
-                    {
-                        slowMo: 500,
-                    }
-                );
-                this.context = this.browser.contexts()[0];
-            }
+            // if (this.ENV.PLAYWRIGHT_LAUNCH_STANDALONE === "true") {
+            this.browser = await chromium.launch({
+                headless: true,
+                slowMo: 500,
+            });
+            this.context = await this.browser.newContext({
+                viewport: { width: 1280, height: 720 },
+                userAgent:
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            });
+            // } else {
+            //     this.browser = await chromium.connectOverCDP(
+            //         "http://localhost:9222",
+            //         {
+            //             slowMo: 500,
+            //         }
+            //     );
+            //     this.context = this.browser.contexts()[0];
+            // }
 
             this.page = await this.context.newPage();
             logger.info("Browser initialized successfully.");
