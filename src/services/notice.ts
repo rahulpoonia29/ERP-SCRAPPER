@@ -38,11 +38,7 @@ export async function scrapeNotices(params: NoticeScrapeParams): Promise<void> {
         runLogger.info("Session established successfully.");
 
         // --- Step 2: Scrape Notices ---
-        const scraper = new NoticeScraper(
-            session.getPage(),
-            ENV,
-            lastKnownNoticeAt
-        );
+        const scraper = new NoticeScraper(session.getPage(), lastKnownNoticeAt);
 
         const newNotices = await scraper.scrape();
 
@@ -61,10 +57,6 @@ export async function scrapeNotices(params: NoticeScrapeParams): Promise<void> {
             session = null;
         }
 
-        // await fs.writeFileSync(
-        //     "notices.json",
-        //     JSON.stringify(newNotices, null, 2)
-        // );
         await postNoticesToWebhook(ENV.NOTICE_WEBHOOK_URL, newNotices);
 
         runLogger.info("Successfully posted notices to webhook. Job finished.");

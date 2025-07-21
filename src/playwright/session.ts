@@ -50,7 +50,7 @@ export class ErpSession {
 
             // if (this.ENV.PLAYWRIGHT_LAUNCH_STANDALONE === "true") {
             this.browser = await chromium.launch({
-                headless: true,
+                headless: false,
                 slowMo: 500,
             });
             this.context = await this.browser.newContext({

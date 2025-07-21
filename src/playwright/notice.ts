@@ -1,10 +1,9 @@
 import { type Locator, type Page } from "playwright";
 import type { Env } from "../types/env.js";
 import type { Notice } from "../types/notice.js";
+import { clickPanelOption } from "../utils/clickPanel.js";
 import { logger } from "../utils/logger.js";
 import { uploadDocumentToStorage } from "../utils/uploadDocument.js";
-import path from "path";
-import * as fs from "fs/promises";
 
 export class NoticeScraper {
     private readonly LAST_NOTICE_AT: string;
@@ -19,32 +18,55 @@ export class NoticeScraper {
 
     private readonly NOTICES_URL =
         "https://erp.iitkgp.ac.in/TrainingPlacementSSO/Notice.jsp";
+    private readonly CDC_URL =
+        "https://erp.iitkgp.ac.in/IIT_ERP3/menulist.htm?module_id=26";
+    private readonly PANEL_HEADING_STUDENT = "Student";
+    private readonly PANEL_OPTION_APPLICATION =
+        "Application of Placement/Internship";
 
-    constructor(private page: Page, ENV: Env, lastKnownNoticeAt: string) {
+    constructor(private page: Page, lastKnownNoticeAt: string) {
         this.LAST_NOTICE_AT = lastKnownNoticeAt;
     }
 
     public async scrape(): Promise<Notice[]> {
-        if (!this.page || !this.NOTICES_URL) {
+        if (
+            !this.page ||
+            !this.CDC_URL ||
+            !this.PANEL_HEADING_STUDENT ||
+            !this.PANEL_OPTION_APPLICATION ||
+            !this.LAST_NOTICE_AT
+        ) {
             throw new Error("Page or NOTICES_URL is not configured.");
         }
 
         const notices: Notice[] = [];
         try {
-            logger.info("Starting notice scraping process.", {
-                url: this.NOTICES_URL,
+            logger.info("Starting notice scraping process.", {});
+            await this.navigateToCdcSection(this.page);
+
+            const iframeElement = await this.page.waitForSelector(
+                'iframe[name="myframe"]',
+                { timeout: 5000 }
+            );
+            const frame = await iframeElement.contentFrame();
+            if (!frame) {
+                throw new Error("Could not find the 'myframe' iframe.");
+            }
+            // await frame.click("selector-inside-iframe");
+            await frame.click('a[href="Notice.jsp"]');
+
+            // Wait for the new content (notices grid) to load in the iframe
+            logger.info("Waiting for the notices grid to be visible.");
+            await frame.waitForSelector(this.SELECTORS.GRID, {
+                state: "visible",
+                timeout: 5000,
             });
+
             await this.page.goto(this.NOTICES_URL, {
                 waitUntil: "domcontentloaded",
             });
-
-            logger.info("Waiting for the notices grid to be visible.");
-            await this.page.waitForSelector(this.SELECTORS.GRID, {
-                state: "visible",
-                timeout: 10000,
-            });
-
             const rows = await this.page.locator(this.SELECTORS.ROW).all();
+
             logger.info(`Found ${rows.length} notice rows to process.`);
 
             if (rows.length === 0) return notices;
@@ -79,7 +101,7 @@ export class NoticeScraper {
                 }
 
                 try {
-                    const notice = await this._processRow(row);
+                    const notice = await this.processRow(row);
                     notices.push(notice);
                     logger.info("Successfully scraped notice.", {
                         rowIndex: index + 1,
@@ -110,7 +132,35 @@ export class NoticeScraper {
         }
     }
 
-    private async _processRow(row: Locator): Promise<Notice> {
+    public async navigateToCdcSection(page: Page): Promise<void> {
+        await page.goto(this.CDC_URL, {
+            waitUntil: "domcontentloaded",
+        });
+
+        logger.info("Navigated to CDC section.", { url: this.CDC_URL });
+
+        await page.waitForSelector("#accordion", {
+            state: "visible",
+            timeout: 5000,
+        });
+
+        logger.info("Accordion is visible, proceeding to click panel option.", {
+            panelText: this.PANEL_HEADING_STUDENT,
+            optionText: this.PANEL_OPTION_APPLICATION,
+        });
+
+        await page.click('a[href="menulist.htm?module_id=26"]');
+
+        logger.info("Clicked on the panel option to navigate to notices.");
+
+        await clickPanelOption(
+            page,
+            this.PANEL_HEADING_STUDENT,
+            this.PANEL_OPTION_APPLICATION
+        );
+    }
+
+    private async processRow(row: Locator): Promise<Notice> {
         const type =
             (
                 await row
@@ -136,8 +186,8 @@ export class NoticeScraper {
                     .textContent()
             )?.trim() || "N/A";
 
-        const noticeText = await this._extractNoticeText(row);
-        const protectedDocumentUrl = await this._extractDocumentUrl(row);
+        const noticeText = await this.extractNoticeText(row);
+        const protectedDocumentUrl = await this.extractDocumentUrl(row);
 
         if (!protectedDocumentUrl) {
             return {
@@ -150,7 +200,7 @@ export class NoticeScraper {
             };
         }
 
-        const documentUrl = await this._uploadDocument(
+        const documentUrl = await this.uploadDocument(
             protectedDocumentUrl,
             `${company}_${subject}.pdf`
         );
@@ -164,7 +214,7 @@ export class NoticeScraper {
         };
     }
 
-    private async _extractNoticeText(row: Locator): Promise<string> {
+    private async extractNoticeText(row: Locator): Promise<string> {
         try {
             await row.locator('[aria-describedby="grid54_notice"] a').click();
             const dialog = this.page.locator(this.SELECTORS.VISIBLE_DIALOG);
@@ -208,7 +258,7 @@ export class NoticeScraper {
         }
     }
 
-    private async _extractDocumentUrl(row: Locator): Promise<string | null> {
+    private async extractDocumentUrl(row: Locator): Promise<string | null> {
         const downloadLink = row.locator('[aria-describedby="grid54_view1"] a');
         if ((await downloadLink.textContent())?.trim() !== "Download")
             return null;
@@ -233,7 +283,7 @@ export class NoticeScraper {
         }
     }
 
-    private async _uploadDocument(
+    private async uploadDocument(
         protectedDocumentUrl: string,
         filename: string
     ): Promise<string | null> {
