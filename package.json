@@ -4,7 +4,8 @@
     "scripts": {
         "dev": "tsx watch --env-file=.env src/index.ts",
         "build": "tsc",
-        "start": "node --env-file=.env dist/index.js"
+        "start": "node --env-file=.env dist/index.js",
+        "h-start": "xvfb-run -a npm run start"
     },
     "dependencies": {
         "@hono/node-server": "^1.16.0",

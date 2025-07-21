@@ -287,6 +287,11 @@ export class NoticeScraper {
         protectedDocumentUrl: string,
         filename: string
     ): Promise<string | null> {
+        logger.info("Uploading document from URL.", {
+            url: protectedDocumentUrl,
+            filename,
+        });
+
         const newPage = await this.page.context().newPage();
         try {
             const pdfResponsePromise = new Promise<Buffer>(
@@ -318,7 +323,7 @@ export class NoticeScraper {
 
                             resolve(responseBuffer);
                         } catch (err) {
-                            reject(err);
+                            throw err;
                         }
                     });
                 }
