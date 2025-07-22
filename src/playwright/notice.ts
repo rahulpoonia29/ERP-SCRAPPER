@@ -1,5 +1,4 @@
 import { type Locator, type Page } from "playwright";
-import type { Env } from "../types/env.js";
 import type { Notice } from "../types/notice.js";
 import { clickPanelOption } from "../utils/clickPanel.js";
 import { logger } from "../utils/logger.js";
@@ -29,129 +28,82 @@ export class NoticeScraper {
     }
 
     public async scrape(): Promise<Notice[]> {
-        if (
-            !this.page ||
-            !this.CDC_URL ||
-            !this.PANEL_HEADING_STUDENT ||
-            !this.PANEL_OPTION_APPLICATION ||
-            !this.LAST_NOTICE_AT
-        ) {
-            throw new Error("Page or NOTICES_URL is not configured.");
-        }
-
         const notices: Notice[] = [];
-        try {
-            logger.info("Starting notice scraping process.", {});
-            await this.navigateToCdcSection(this.page);
 
-            const iframeElement = await this.page.waitForSelector(
-                'iframe[name="myframe"]',
-                { timeout: 5000 }
-            );
-            const frame = await iframeElement.contentFrame();
-            if (!frame) {
-                throw new Error("Could not find the 'myframe' iframe.");
-            }
-            // await frame.click("selector-inside-iframe");
-            await frame.click('a[href="Notice.jsp"]');
+        logger.info("Starting notice scraping process.");
+        await this.navigateToCdcSection(this.page);
 
-            // Wait for the new content (notices grid) to load in the iframe
-            logger.info("Waiting for the notices grid to be visible.");
-            await frame.waitForSelector(this.SELECTORS.GRID, {
-                state: "visible",
-                timeout: 5000,
-            });
+        const iframeElement = await this.page.waitForSelector(
+            'iframe[name="myframe"]',
+            { timeout: 5000 }
+        );
+        const frame = await iframeElement.contentFrame();
+        if (!frame) throw new Error("Could not find the 'myframe' iframe.");
 
-            await this.page.goto(this.NOTICES_URL, {
-                waitUntil: "domcontentloaded",
-            });
-            const rows = await this.page.locator(this.SELECTORS.ROW).all();
+        await frame.click('a[href="Notice.jsp"]');
 
-            logger.info(`Found ${rows.length} notice rows to process.`);
+        await frame.waitForSelector(this.SELECTORS.GRID, {
+            state: "visible",
+            timeout: 5000,
+        });
 
-            if (rows.length === 0) return notices;
-
-            const lastKnownDate = new Date(this.LAST_NOTICE_AT);
-
-            for (const [index, row] of rows.entries()) {
-                const noticeAtText = (
-                    await row
-                        .locator('[aria-describedby="grid54_noticeat"]')
-                        .textContent()
-                )?.trim();
-                if (!noticeAtText) {
-                    logger.warn("Skipping row due to missing notice date.", {
-                        rowIndex: index + 1,
-                    });
-                    continue;
-                }
-
-                const [datePart, timePart] = noticeAtText.split(" ");
-                const [day, month, year] = datePart.split("-");
-                const noticeDate = new Date(
-                    `${year}-${month}-${day}T${timePart}`
-                );
-
-                if (noticeDate <= lastKnownDate) {
-                    logger.info(
-                        "Reached notices older than last known date. Stopping scrape.",
-                        { lastKnownDate }
-                    );
-                    break;
-                }
-
-                try {
-                    const notice = await this.processRow(row);
-                    notices.push(notice);
-                    logger.info("Successfully scraped notice.", {
-                        rowIndex: index + 1,
-                        company: notice.company,
-                    });
-                } catch (rowError) {
-                    logger.error("Failed to process a row.", {
-                        rowIndex: index + 1,
-                        error:
-                            rowError instanceof Error
-                                ? rowError.stack
-                                : String(rowError),
-                    });
-                }
-            }
-            logger.info(
-                `Scraping complete. Found ${notices.length} new notices.`
-            );
-            return notices;
-        } catch (error) {
-            logger.error(
-                "A critical error occurred during the main scraping process.",
-                {
-                    error: error instanceof Error ? error.stack : String(error),
-                }
-            );
-            throw error;
-        }
-    }
-
-    public async navigateToCdcSection(page: Page): Promise<void> {
-        await page.goto(this.CDC_URL, {
+        await this.page.goto(this.NOTICES_URL, {
             waitUntil: "domcontentloaded",
         });
 
-        logger.info("Navigated to CDC section.", { url: this.CDC_URL });
+        await this.page.waitForSelector(this.SELECTORS.GRID, {
+            state: "visible",
+            timeout: 5000,
+        });
+
+        await this.page.waitForTimeout(20000);
+
+        const rows = await this.page.locator(this.SELECTORS.ROW).all();
+
+        const lastKnownDate = new Date(this.LAST_NOTICE_AT);
+
+        for (const [index, row] of rows.entries()) {
+            const noticeAtText = (
+                await row
+                    .locator('[aria-describedby="grid54_noticeat"]')
+                    .textContent()
+            )?.trim();
+
+            if (!noticeAtText) continue;
+
+            const [datePart, timePart] = noticeAtText.split(" ");
+            const [day, month, year] = datePart.split("-");
+            const noticeDate = new Date(`${year}-${month}-${day}T${timePart}`);
+
+            if (noticeDate <= lastKnownDate) break;
+
+            try {
+                const notice = await this.processRow(row);
+                notices.push(notice);
+                logger.info("Successfully scraped notice.", {
+                    rowIndex: index + 1,
+                    company: notice.company,
+                });
+            } catch (err) {
+                logger.error("Failed to process row.", {
+                    rowIndex: index + 1,
+                    error: String(err),
+                });
+            }
+        }
+
+        return notices;
+    }
+
+    public async navigateToCdcSection(page: Page): Promise<void> {
+        await page.goto(this.CDC_URL, { waitUntil: "domcontentloaded" });
 
         await page.waitForSelector("#accordion", {
             state: "visible",
             timeout: 5000,
         });
 
-        logger.info("Accordion is visible, proceeding to click panel option.", {
-            panelText: this.PANEL_HEADING_STUDENT,
-            optionText: this.PANEL_OPTION_APPLICATION,
-        });
-
         await page.click('a[href="menulist.htm?module_id=26"]');
-
-        logger.info("Clicked on the panel option to navigate to notices.");
 
         await clickPanelOption(
             page,
@@ -189,21 +141,15 @@ export class NoticeScraper {
         const noticeText = await this.extractNoticeText(row);
         const protectedDocumentUrl = await this.extractDocumentUrl(row);
 
-        if (!protectedDocumentUrl) {
-            return {
-                type,
-                subject,
-                company,
-                noticeAt: noticeTime,
-                noticeText,
-                documentUrl: null,
-            };
+        let documentUrl: string | null = null;
+
+        if (protectedDocumentUrl) {
+            documentUrl = await this.downloadAndUploadDocument(
+                protectedDocumentUrl,
+                `${company}_${subject}.pdf`
+            );
         }
 
-        const documentUrl = await this.uploadDocument(
-            protectedDocumentUrl,
-            `${company}_${subject}.pdf`
-        );
         return {
             type,
             subject,
@@ -228,9 +174,8 @@ export class NoticeScraper {
             const rawHtml = await iframe
                 .locator(this.SELECTORS.IFRAME_CONTENT)
                 .innerHTML();
-
-            const lines = rawHtml.split(/<br\s*\/?>/i);
-            const noticeContent = lines
+            const noticeContent = rawHtml
+                .split(/<br\s*\/?>/i)
                 .slice(4)
                 .join("\n")
                 .replace(/<[^>]+>/g, "")
@@ -240,13 +185,9 @@ export class NoticeScraper {
             await dialog.waitFor({ state: "hidden", timeout: 5000 });
 
             return noticeContent;
-        } catch (error) {
+        } catch (err) {
             logger.warn(
-                "Failed to extract full notice text from dialog, falling back to title.",
-                {
-                    error:
-                        error instanceof Error ? error.message : String(error),
-                }
+                "Failed to extract notice text, falling back to title."
             );
             return (
                 (
@@ -274,83 +215,60 @@ export class NoticeScraper {
             await dialog.locator(this.SELECTORS.CLOSE_BUTTON).click();
             await dialog.waitFor({ state: "hidden", timeout: 5000 });
 
-            return documentSrc ? new URL(documentSrc).toString() : null;
-        } catch (error) {
-            logger.warn("Could not extract document URL.", {
-                error: error instanceof Error ? error.message : String(error),
+            return documentSrc || null;
+        } catch (err) {
+            logger.warn("Failed to extract document URL.", {
+                error: String(err),
             });
             return null;
         }
     }
 
-    private async uploadDocument(
-        protectedDocumentUrl: string,
+    private async downloadAndUploadDocument(
+        pdfUrl: string,
         filename: string
     ): Promise<string | null> {
-        logger.info("Uploading document from URL.", {
-            url: protectedDocumentUrl,
-            filename,
-        });
+        logger.info("Downloading PDF with proper headers.", { url: pdfUrl });
 
-        const newPage = await this.page.context().newPage();
+        const headers = {
+            "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0",
+            Accept: "application/pdf,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.5",
+            Referer: this.NOTICES_URL,
+            Connection: "keep-alive",
+            "Sec-GPC": "1",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "iframe",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+        };
+
         try {
-            const pdfResponsePromise = new Promise<Buffer>(
-                (resolve, reject) => {
-                    newPage.on("response", async (response) => {
-                        const regex =
-                            /chrome\-extension:\/\/mhjfbmdgcfjbbpaeojofohoefgiehjai\/[0-9a-f\-]{8,}/;
-                        const url = response.url();
-
-                        if (!regex.test(url)) return;
-
-                        try {
-                            const responseBuffer = await response.body();
-
-                            if (!responseBuffer) {
-                                reject(
-                                    new Error("No response buffer received.")
-                                );
-                                return;
-                            }
-
-                            logger.info("Received document response", {
-                                url,
-                                size: `${(responseBuffer.length / 1024).toFixed(
-                                    2
-                                )} KB`,
-                                contentType: response.headers()["content-type"],
-                            });
-
-                            resolve(responseBuffer);
-                        } catch (err) {
-                            throw err;
-                        }
-                    });
-                }
-            );
-
-            await newPage.goto(protectedDocumentUrl, {
-                waitUntil: "networkidle",
-                timeout: 10000,
+            const response = await this.page.request.get(pdfUrl, {
+                headers,
+                timeout: 15000,
             });
 
-            await newPage.waitForLoadState("networkidle");
-            const pdfBuffer = await pdfResponsePromise;
+            if (!response.ok()) {
+                logger.error("Failed to fetch PDF.", {
+                    status: response.status(),
+                    statusText: response.statusText(),
+                });
+                return null;
+            }
 
-            const documentUrl = await uploadDocumentToStorage(
-                pdfBuffer,
-                filename
-            );
+            const buffer = await response.body();
 
-            return documentUrl;
-        } catch (error) {
-            logger.error("Failed to download or upload the document.", {
-                url: protectedDocumentUrl,
-                error: error instanceof Error ? error.message : String(error),
+            const uploadedUrl = await uploadDocumentToStorage(buffer, filename);
+
+            logger.info("Uploaded PDF successfully.", { url: uploadedUrl });
+            return uploadedUrl;
+        } catch (err) {
+            logger.error("Failed to download/upload PDF.", {
+                error: String(err),
             });
             return null;
-        } finally {
-            await newPage.close();
         }
     }
 }
