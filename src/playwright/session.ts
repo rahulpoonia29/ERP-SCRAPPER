@@ -7,6 +7,10 @@ import {
 import type { Env } from "../types/env.js";
 import { logger } from "../utils/logger.js";
 import { getOTPWithBackoff } from "../utils/getOTP.js";
+import {
+    readSessionTokenFromFile,
+    saveSessionTokenToFile,
+} from "../utils/sessionToken.js";
 
 export class ErpSession {
     private browser!: Browser;
@@ -16,7 +20,9 @@ export class ErpSession {
 
     private readonly URLS = {
         LOGIN: process.env.ERP_URL || "https://erp.iitkgp.ac.in",
-        LOGIN_SUCCESS_REDIRECT: "https://erp.iitkgp.ac.in/IIT_ERP3/",
+        WELCOME:
+            process.env.ERP_WELCOME_URL ||
+            "https://erp.iitkgp.ac.in/IIT_ERP3/welcome.jsp",
     };
 
     private readonly SELECTORS = {
@@ -83,20 +89,48 @@ export class ErpSession {
             throw new Error("Browser not initialized. Call init() first.");
         }
 
-        const loginLogger = logger.child({ rollNo: this.rollNo });
-
         try {
-            loginLogger.info("Starting ERP login flow.");
+            // Check if session is already alive
+            const isAlive = await this.isSessionAlive();
+            if (isAlive) {
+                logger.info("Session is already alive. Skipping login.");
+                await this._saveSessionToken();
+                return;
+            }
+
+            // Obtain the session token from file and check if it is valid
+            const savedSessionToken = await readSessionTokenFromFile();
+
+            if (savedSessionToken) {
+                await this.context.clearCookies();
+                await this.context.addCookies([
+                    {
+                        name: "ssoToken",
+                        value: savedSessionToken,
+                        path: "/",
+                        domain: "erp.iitkgp.ac.in",
+                    },
+                ]);
+
+                const isValidSession = await this.isSessionAlive();
+                if (isValidSession) {
+                    logger.info("Using existing session token. Login skipped.");
+                    return;
+                }
+            }
+
+            logger.info("Starting ERP login flow.");
+
             await this._navigateToLoginPage();
             await this._fillCredentials();
             await this._handleSecurityQuestion();
             await this._submitOtp();
 
-            loginLogger.info(
-                "Login successful and redirected to welcome page."
-            );
+            await this._saveSessionToken();
+
+            logger.info("Login flow completed successfully.");
         } catch (error) {
-            loginLogger.error("Login flow failed.", {
+            logger.error("Login flow failed.", {
                 error: error instanceof Error ? error.stack : String(error),
             });
             throw new Error(
@@ -159,6 +193,30 @@ export class ErpSession {
 
         await this.page.fill(this.SELECTORS.OTP_INPUT, otp.toString().trim());
         await this.page.click(this.SELECTORS.LOGIN_SUBMIT_BUTTON);
+    }
+
+    private async _saveSessionToken(): Promise<void> {
+        const cookies = await this.context.cookies();
+        const sessionToken = cookies.find(
+            (cookie) => cookie.name === "ssoToken"
+        );
+
+        if (!sessionToken || !sessionToken.value) {
+            throw new Error("Session token not found in cookies.");
+        }
+
+        await saveSessionTokenToFile(sessionToken.value);
+    }
+
+    public async isSessionAlive(): Promise<boolean> {
+        // Navigationg to https://erp.iitkgp.ac.in/IIT_ERP3/welcome.jsp results in a redirect to the login page if the session is not alive.
+        await this.page.goto(this.URLS.WELCOME, {
+            waitUntil: "domcontentloaded",
+        });
+
+        const currentUrl = this.page.url().split("?")[0];
+        console.log(currentUrl.includes(this.URLS.WELCOME));
+        return currentUrl.includes(this.URLS.WELCOME);
     }
 
     public getPage(): Page {
