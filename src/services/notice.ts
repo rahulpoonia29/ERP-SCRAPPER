@@ -57,9 +57,7 @@ export async function scrapeNotices(params: NoticeScrapeParams): Promise<void> {
             session = null;
         }
 
-        console.log("Notices:", JSON.stringify(newNotices, null, 2));
-
-        // await postNoticesToWebhook(ENV.NOTICE_WEBHOOK_URL, newNotices);
+        await postNoticesToWebhook(ENV.NOTICE_WEBHOOK_URL, newNotices);
 
         runLogger.info("Successfully posted notices to webhook. Job finished.");
     } catch (error) {
